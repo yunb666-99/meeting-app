@@ -6,11 +6,11 @@ workflows:
       flutter: 3.22.0
     scripts:
       - name: Get packages
-        script: cd 安卓App/mobile && flutter pub get
+        script: cd android-source && flutter pub get
       - name: Build APK
-        script: cd 安卓App/mobile && flutter build apk --release
+        script: cd android-source && flutter build apk --release
     artifacts:
-      - 安卓App/mobile/build/app/outputs/flutter-apk/app-release.apk
+      - android-source/build/app/outputs/flutter-apk/app-release.apk
 
   ios-build:
     name: iOS Build
@@ -21,10 +21,10 @@ workflows:
       cocoapods: default
     scripts:
       - name: Get packages
-        script: cd 苹果App/mobile && flutter pub get
+        script: cd ios-source && flutter pub get
       - name: Build iOS
         script: |
-          cd 苹果App/mobile
+          cd ios-source
           flutter build ios --release --no-codesign
     artifacts:
-      - 苹果App/mobile/build/ios/iphoneos/Runner.app
+      - ios-source/build/ios/iphoneos/Runner.app
