@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # 反向代理 + SSL 证书自动管理
+  # ============================================
+  caddy:
+    image: caddy:2-alpine
+    container_name: meeting-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./admin-panel/dist:/srv/admin-panel:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - livekit
+    restart: unless-stopped
+    networks:
+      - meeting-network
+
+  # ============================================
+  # PostgreSQL 数据库
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: meeting-postgres
+    environment:
+      POSTGRES_DB: meetingapp
+      POSTGRES_USER: meetingapp
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meetingapp -d meetingapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis 缓存
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: meeting-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - meeting-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # NestJS 后端 API
+  # ============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: meeting-backend
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://meetingapp:${DB_PASSWORD}@postgres:5432/meetingapp
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_URL: http://livekit:7880
+      LIVEKIT_WS_URL: wss://${DOMAIN}
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - meeting-network
+
+  # ============================================
+  # LiveKit 媒体服务器 (SFU)
+  # ============================================
+  livekit:
+    image: livekit/livekit-server:v1.9.0
+    container_name: meeting-livekit
+    command: >
+      --config /etc/livekit.yaml
+      --node-ip ${SERVER_IP}
+    ports:
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          port_range_start: 50000
+          port_range_end: 50100
+          use_external_ip: true
+          tcp_port: 7881
+          node_ip: ${SERVER_IP}
+        redis:
+          address: redis:6379
+          password: ${REDIS_PASSWORD}
+        keys:
+          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - meeting-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  meeting-network:
+    driver: bridge

@@ -1,0 +1,23 @@
+{$DOMAIN} {
+    # 管理后台静态文件
+    handle_path /admin/* {
+        root * /srv/admin-panel
+        try_files {path} /admin/index.html
+        file_server
+    }
+
+    # API 接口 → NestJS 后端
+    handle_path /api/* {
+        reverse_proxy backend:3000
+    }
+
+    # WebSocket → NestJS Socket.IO
+    handle_path /socket.io/* {
+        reverse_proxy backend:3000
+    }
+
+    # 默认跳转到管理后台
+    handle {
+        redir /admin
+    }
+}

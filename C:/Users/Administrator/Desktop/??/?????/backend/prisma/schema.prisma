@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// 用户表
+// ============================================
+enum UserRole {
+  USER   // 普通用户
+  ADMIN  // 管理员
+}
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  account       String     @unique @db.VarChar(50)
+  passwordHash  String     @map("password_hash") @db.VarChar(255)
+  nickname      String     @db.VarChar(50)
+  role          UserRole   @default(USER)
+  avatarUrl     String?    @map("avatar_url") @db.VarChar(500)
+  isActive      Boolean    @default(true) @map("is_active")
+  lastLoginAt   DateTime?  @map("last_login_at") @db.Timestamptz()
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // 关系
+  hostedMeetings    Meeting[]           @relation("MeetingHost")
+  participations    MeetingParticipant[]
+  chatMessages      ChatMessage[]
+  adminLogs         AdminLog[]
+  refreshTokens     RefreshToken[]
+
+  @@map("users")
+}
+
+// ============================================
+// 会议表
+// ============================================
+enum MeetingStatus {
+  ACTIVE
+  ENDED
+}
+
+model Meeting {
+  id          String        @id @default(uuid()) @db.Uuid
+  meetingId   String        @unique @map("meeting_id") @db.VarChar(20)  // 纯数字会议号
+  password    String        @db.VarChar(255)                             // bcrypt 哈希后的密码
+  title       String?       @db.VarChar(100)
+  hostId      String        @map("host_id") @db.Uuid
+  host        User          @relation("MeetingHost", fields: [hostId], references: [id])
+  status      MeetingStatus @default(ACTIVE)
+  startedAt   DateTime      @default(now()) @map("started_at") @db.Timestamptz()
+  endedAt     DateTime?     @map("ended_at") @db.Timestamptz()
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // 关系
+  participants  MeetingParticipant[]
+  chatMessages  ChatMessage[]
+
+  @@index([hostId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("meetings")
+}
+
+// ============================================
+// 参会记录表
+// ============================================
+enum ParticipantRole {
+  HOST
+  PARTICIPANT
+}
+
+model MeetingParticipant {
+  id             String          @id @default(uuid()) @db.Uuid
+  meetingId      String          @map("meeting_id") @db.Uuid
+  meeting        Meeting         @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId         String?         @map("user_id") @db.Uuid
+  user           User?           @relation(fields: [userId], references: [id])
+  guestNickname  String?         @map("guest_nickname") @db.VarChar(50)
+  identity       String          @db.VarChar(100)  // LiveKit participant identity
+  role           ParticipantRole @default(PARTICIPANT)
+  joinedAt       DateTime        @default(now()) @map("joined_at") @db.Timestamptz()
+  leftAt         DateTime?       @map("left_at") @db.Timestamptz()
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@unique([meetingId, identity])
+  @@index([userId])
+  @@index([meetingId])
+  @@map("meeting_participants")
+}
+
+// ============================================
+// 聊天消息表
+// ============================================
+enum MessageType {
+  TEXT
+  SYSTEM
+}
+
+model ChatMessage {
+  id                String      @id @default(uuid()) @db.Uuid
+  meetingId         String      @map("meeting_id") @db.Uuid
+  meeting           Meeting     @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  senderUserId      String?     @map("sender_user_id") @db.Uuid
+  sender            User?       @relation(fields: [senderUserId], references: [id])
+  senderGuestName   String?     @map("sender_guest_name") @db.VarChar(50)
+  content           String      @db.Text
+  messageType       MessageType @default(TEXT) @map("message_type")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([meetingId, createdAt])
+  @@map("chat_messages")
+}
+
+// ============================================
+// 管理员操作日志表
+// ============================================
+model AdminLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  adminUserId  String   @map("admin_user_id") @db.Uuid
+  admin        User     @relation(fields: [adminUserId], references: [id])
+  action       String   @db.VarChar(100)
+  targetType   String?  @map("target_type") @db.VarChar(50)
+  targetId     String?  @map("target_id") @db.VarChar(100)
+  details      Json?
+  ipAddress    String   @map("ip_address") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([adminUserId, createdAt])
+  @@index([action])
+  @@map("admin_logs")
+}
+
+// ============================================
+// 刷新令牌表
+// ============================================
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique @map("token_hash") @db.VarChar(255)
+  userAgent  String?  @map("user_agent") @db.VarChar(500)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz()
+  revoked    Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
