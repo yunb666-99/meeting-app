@@ -5,10 +5,13 @@ workflows:
     environment:
       flutter: 3.22.0
     scripts:
-      - name: Get packages
-        script: cd android-source && flutter pub get
       - name: Build APK
-        script: cd android-source && flutter build apk --release
+        script: |
+          ls -la
+          ls -la android-source/
+          cd android-source
+          flutter pub get
+          flutter build apk --release
     artifacts:
       - android-source/build/app/outputs/flutter-apk/app-release.apk
 
@@ -20,11 +23,10 @@ workflows:
       xcode: 16.0
       cocoapods: default
     scripts:
-      - name: Get packages
-        script: cd ios-source && flutter pub get
       - name: Build iOS
         script: |
           cd ios-source
+          flutter pub get
           flutter build ios --release --no-codesign
     artifacts:
       - ios-source/build/ios/iphoneos/Runner.app
